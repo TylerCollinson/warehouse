@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warehouse Management</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: white; color: #003f7d; margin: 0; padding: 20px; }
+        
+        /* Layout Containers */
+        .container { max-width: 800px; margin: auto; text-align: center; }
+        
+        /* Buttons use your blue and green */
+        button { 
+            background-color: #00acec; color: white; border: none; 
+            padding: 12px 24px; border-radius: 5px; cursor: pointer; 
+            font-weight: bold; font-size: 16px; transition: 0.3s;
+            margin: 10px;
+        }
+        
+        button:hover { background-color: #003f7d; transform: translateY(-2px); }
+        
+        .dept-card {
+            border: 2px solid #a6cf1a; /* Your Lime Green */
+            padding: 30px; margin: 20px 0; border-radius: 12px;
+            background-color: #f9f9f9;
+        }
+
+        h2, h3 { color: #003f7d; border-bottom: 2px solid #00acec; padding-bottom: 10px; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background-color: #003f7d; color: white; padding: 10px; }
+        td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Warehouse Portal</h1>
+
+    <div id="login-section" class="dept-card">
+        <p>Please sign in with your company Google account to continue.</p>
+        <button onclick="login()">Login with Google</button>
+    </div>
+
+    <div id="department-selection" style="display:none;">
+        <h2>Select Department</h2>
+        <div class="dept-card">
+            <button onclick="askForPin('chemistry')">Chemistry Department</button>
+            <button onclick="askForPin('receiving')">Sample & Receiving</button>
+        </div>
+    </div>
+
+    <div id="inventory-table" style="display:none;">
+        <h3 id="dept-title"></h3>
+        <div id="inventory-list">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Item Name</th>
+                        <th>Location</th>
+                        <th>Quantity</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                    </tbody>
+            </table>
+        </div>
+        <br>
+        <button onclick="backToProfiles()" style="background-color: #003f7d;">← Back to Profiles</button>
+    </div>
+</div>
+
+<script type="module">
+    // WE MUST USE HTTPS LINKS FOR GITHUB PAGES
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyB_Qs2wlUjeptWIbe1EDQF_jFgSRKBj064",
+    authDomain: "warehouse-f7584.firebaseapp.com",
+    projectId: "warehouse-f7584",
+    storageBucket: "warehouse-f7584.firebasestorage.app",
+    messagingSenderId: "1775020901",
+    appId: "1:1775020901:web:e8f44b6b6047d988d44f8c",
+    measurementId: "G-2GQ2P8MTT1"
+};
+
+const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const provider = new GoogleAuthProvider();
+
+    // Make functions global so HTML buttons can find them
+    window.login = async () => {
+        try {
+            const result = await signInWithPopup(auth, provider);
+            // Optional: Restrict to your work domain
+            if (result.user.email.endsWith("@yourworkemail.com")) {
+                document.getElementById('login-section').style.display = 'none';
+                document.getElementById('department-selection').style.display = 'block';
+            } else {
+                alert("Access Restricted to Company Emails.");
+                auth.signOut();
+            }
+        } catch (error) {
+            alert("Login failed: " + error.message);
+        }
+    };
+
+    window.askForPin = (dept) => {
+        const pin = prompt("Enter PIN for " + dept);
+        if (pin === "1234" || pin === "9999") { 
+            document.getElementById('department-selection').style.display = 'none';
+            document.getElementById('inventory-table').style.display = 'block';
+            document.getElementById('dept-title').innerText = dept.toUpperCase() + " Inventory";
+            loadInventory(dept);
+        } else {
+            alert("Invalid PIN");
+        }
+    };
+
+    window.loadInventory = async (dept) => {
+        const tbody = document.getElementById('table-body');
+        tbody.innerHTML = "<tr><td colspan='3'>Loading inventory...</td></tr>";
+
+        try {
+            const querySnapshot = await getDocs(collection(db, "departments", dept, "inventory"));
+            tbody.innerHTML = ""; // Clear loading message
+            querySnapshot.forEach((doc) => {
+                const item = doc.data();
+                const row = `<tr>
+                    <td>${item.name || 'N/A'}</td>
+                    <td>${item.location || 'N/A'}</td>
+                    <td>${item.qty || 0}</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+        } catch (e) {
+            console.error(e);
+            tbody.innerHTML = "<tr><td colspan='3'>Error loading data. Check Permissions.</td></tr>";
+        }
+    };
+
+    window.backToProfiles = () => {
+        document.getElementById('inventory-table').style.display = 'none';
+        document.getElementById('department-selection').style.display = 'block';
+    };
+</script>
+</body>
+</html>
+
