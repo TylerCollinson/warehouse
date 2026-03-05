@@ -53,26 +53,36 @@
     </div>
 
     <div id="inventory-table" style="display:none;">
-        <h3 id="dept-title"></h3>
-        <div id="inventory-list">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Item Name</th>
-                        <th>Location</th>
-                        <th>Quantity</th>
-                    </tr>
-                </thead>
-                <tbody id="table-body">
-                    </tbody>
-            </table>
-        </div>
-        <br>
-        <button onclick="backToProfiles()" style="background-color: #003f7d;">← Back to Profiles</button>
+    <h3 id="dept-title" style="color: #003f7d; border-bottom: 3px solid #a6cf1a;"></h3>
+    
+    <div style="margin-bottom: 20px;">
+        <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search item names..." 
+               style="padding: 10px; width: 80%; border: 1px solid #00acec; border-radius: 5px;">
     </div>
+
+    <div style="text-align: right;">
+      <button onclick="addNewItem()" style="background-color: #a6cf1a;">+ Add New Item</button>
+  </div>
+
+    <table>
+        <thead>
+            <tr style="background-color: #003f7d; color: white;">
+                <th>Item Name</th>
+                <th>Location</th>
+                <th>Quantity</th>
+                <th>Manage</th>
+            </tr>
+        </thead>
+        <tbody id="table-body">
+            </tbody>
+    </table>
+    
+    <br>
+    <button onclick="backToProfiles()" style="background-color: #003f7d;">← Change Department</button>
 </div>
 
 <script type="module">
+    import { doc, updateDoc, increment, addDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
     // WE MUST USE HTTPS LINKS FOR GITHUB PAGES
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
@@ -93,22 +103,61 @@ const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const provider = new GoogleAuthProvider();
 
-    // Make functions global so HTML buttons can find them
     window.login = async () => {
-        try {
-            const result = await signInWithPopup(auth, provider);
-            // Optional: Restrict to your work domain
-            if (result.user.email.endsWith("@yourworkemail.com")) {
-                document.getElementById('login-section').style.display = 'none';
-                document.getElementById('department-selection').style.display = 'block';
-            } else {
-                alert("Access Restricted to Company Emails.");
-                auth.signOut();
-            }
-        } catch (error) {
-            alert("Login failed: " + error.message);
+    try {
+        // This line opens the popup and WAITS for the result
+        const result = await signInWithPopup(auth, provider);
+        
+        // Now that we have the result, we clean up the email string
+        const userEmail = result.user.email.toLowerCase().trim();
+
+        if (userEmail === "tylercollinson8@gmail.com") {
+            console.log("Access Granted!");
+            document.getElementById('login-section').style.display = 'none';
+            document.getElementById('department-selection').style.display = 'block';
+        } else {
+            console.log("Access Denied for:", userEmail);
+            alert("Access Restricted. Logged in as: " + userEmail);
+            await auth.signOut(); // Logs them out so they can try a different account
         }
-    };
+    } catch (error) {
+        console.error("Login error:", error);
+        alert("Login failed: " + error.message);
+    }
+};
+
+window.adjustQty = async (itemId, amount) => {
+    const itemRef = doc(db, "departments", window.currentDept, "inventory", itemId);
+    try {
+        await updateDoc(itemRef, {
+            qty: increment(amount)
+        });
+        loadInventory(window.currentDept); // Live update the UI
+    } catch (e) {
+        alert("Update failed: " + e.message);
+    }
+};
+
+window.addNewItem = async () => {
+    // We use prompts for now because they are the easiest 'popups' to code
+    const name = prompt("Enter Item Name (e.g., Hydrochloric Acid):");
+    const loc = prompt("Enter Location (e.g., Shelf B-4):");
+    const qtyInput = prompt("Enter Initial Quantity:");
+    const qty = parseInt(qtyInput);
+
+    if (name && loc && !isNaN(qty)) {
+        try {
+            await addDoc(collection(db, "departments", window.currentDept, "inventory"), {
+                name: name,
+                location: loc,
+                qty: qty
+            });
+            loadInventory(window.currentDept); // Refresh the table automatically
+        } catch (e) {
+            alert("Error: Could not add item. Check your Firebase Rules.");
+        }
+    }
+};
 
     window.askForPin = (dept) => {
         const pin = prompt("Enter PIN for " + dept);
@@ -122,27 +171,46 @@ const app = initializeApp(firebaseConfig);
         }
     };
 
-    window.loadInventory = async (dept) => {
-        const tbody = document.getElementById('table-body');
-        tbody.innerHTML = "<tr><td colspan='3'>Loading inventory...</td></tr>";
+    window.filterTable = () => {
+    const input = document.getElementById("searchInput").value.toUpperCase();
+    const tr = document.getElementById("table-body").getElementsByTagName("tr");
 
-        try {
-            const querySnapshot = await getDocs(collection(db, "departments", dept, "inventory"));
-            tbody.innerHTML = ""; // Clear loading message
-            querySnapshot.forEach((doc) => {
-                const item = doc.data();
-                const row = `<tr>
-                    <td>${item.name || 'N/A'}</td>
-                    <td>${item.location || 'N/A'}</td>
-                    <td>${item.qty || 0}</td>
-                </tr>`;
-                tbody.innerHTML += row;
-            });
-        } catch (e) {
-            console.error(e);
-            tbody.innerHTML = "<tr><td colspan='3'>Error loading data. Check Permissions.</td></tr>";
+    for (let i = 0; i < tr.length; i++) {
+        let td = tr[i].getElementsByTagName("td")[0]; // Search by Name column
+        if (td) {
+            let txtValue = td.textContent || td.innerText;
+            tr[i].style.display = txtValue.toUpperCase().indexOf(input) > -1 ? "" : "none";
         }
-    };
+    }
+};
+
+    window.loadInventory = async (dept) => {
+    window.currentDept = dept; // Store this globally to use in other functions
+    const tbody = document.getElementById('table-body');
+    tbody.innerHTML = "<tr><td colspan='4'>Loading inventory...</td></tr>";
+
+    try {
+        const querySnapshot = await getDocs(collection(db, "departments", dept, "inventory"));
+        tbody.innerHTML = ""; 
+        querySnapshot.forEach((documentSnapshot) => {
+            const item = documentSnapshot.data();
+            const itemId = documentSnapshot.id;
+            const row = `<tr>
+              <td>${item.name}</td>
+              <td>${item.location}</td>
+              <td style="text-align:center; font-weight:bold;">${item.qty}</td>
+              <td>
+                  <button onclick="adjustQty('${documentSnapshot.id}', 1)" style="background-color:#a6cf1a; padding:5px 10px; margin:2px;">+</button>
+                  <button onclick="adjustQty('${documentSnapshot.id}', -1)" style="background-color:#ff4d4d; padding:5px 10px; margin:2px;">-</button>
+              </td>
+          </tr>`;
+            tbody.innerHTML += row;
+        });
+    } catch (e) {
+        console.error(e);
+        tbody.innerHTML = "<tr><td colspan='4'>Error loading data. Check Permissions.</td></tr>";
+    }
+};
 
     window.backToProfiles = () => {
         document.getElementById('inventory-table').style.display = 'none';
