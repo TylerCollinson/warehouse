@@ -8,7 +8,40 @@
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: white; color: #003f7d; margin: 0; padding: 20px; }
         
         /* Layout Containers */
-        .container { max-width: 800px; margin: auto; text-align: center; }
+        .container { max-width: 900px; margin: auto; text-align: center; }
+
+        /* FLEXBOX HEADER */
+        .main-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 5px;
+            border-bottom: 3px solid #003f7d;
+            margin-bottom: 30px;
+            gap: 10px; /* Space between flex items */
+        }
+
+        .header-left, .header-center, .header-right {
+            flex: 1; 
+            display: flex;
+            align-items: center;
+        }
+
+        .header-left { justify-content: flex-start; }
+        .header-center { justify-content: center; flex: 2; } /* Center gets more space */
+        .header-right { justify-content: flex-end; }
+
+        .logo {
+            height: 60px; /* Slightly smaller for mobile friendliness */
+            width: auto;
+        }
+
+        .logo:hover {
+            transform: scale(1.05);
+            transition: 0.2s;
+        }
+
+        h1 { margin: 0; font-size: 2rem; color: #003f7d; white-space: nowrap; }
         
         /* Buttons use your blue and green */
         button { 
@@ -26,7 +59,7 @@
             background-color: #f9f9f9;
         }
 
-        h2, h3 { color: #003f7d; border-bottom: 2px solid #00acec; padding-bottom: 10px; }
+        h2, h3 { color: #003f7d; padding-bottom: 10px; }
 
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th { background-color: #003f7d; color: white; padding: 10px; }
@@ -37,7 +70,17 @@
 <body>
 
 <div class="container">
-    <h1>Warehouse Portal</h1>
+    <header class="main-header">
+        <div class="header-left">
+            <img src="./assets/logo.png" alt="Logo" class="logo" onclick="goHome()" style="cursor: pointer;">
+        </div>
+        <div class="header-center">
+            <h1>Warehouse Portal</h1>
+        </div>
+        <div class="header-right">
+            <button id="logout-btn" onclick="logout()" style="display:none; background-color: #ff4d4d; font-size: 14px; padding: 8px 16px;">Logout</button>
+        </div>
+    </header>
 
     <div id="login-section" class="dept-card">
         <p>Please sign in with your company Google account to continue.</p>
@@ -45,12 +88,21 @@
     </div>
 
     <div id="department-selection" style="display:none;">
-        <h2>Select Department</h2>
-        <div class="dept-card">
-            <button onclick="askForPin('chemistry')">Chemistry Department</button>
-            <button onclick="askForPin('receiving')">Sample & Receiving</button>
-        </div>
+    <h2>Select Department</h2>
+    <div class="dept-card" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <button onclick="askForPin('chemistry')">Chemistry</button>
+        <button onclick="askForPin('prep')">Sample Prep</button>
+        <button onclick="askForPin('micro')">Micro</button>
+        <button onclick="askForPin('micro-misc')">Micro - Misc</button>
+        <button onclick="askForPin('staples')">Staples</button>
+        <button onclick="askForPin('allergen')">Allergen</button>
+        <button onclick="askForPin('facilities')">Facilities</button>
+        <button onclick="askForPin('safety')">Safety</button>
+        <button onclick="askForPin('media')">Media</button>
+        <button onclick="askForPin('masterclave')">Masterclave</button>
+        <button onclick="askForPin('media-ith')">Media - ITH</button>
     </div>
+</div>
 
     <div id="inventory-table" style="display:none;">
     <h3 id="dept-title" style="color: #003f7d; border-bottom: 3px solid #a6cf1a;"></h3>
@@ -67,14 +119,18 @@
     <table>
         <thead>
             <tr style="background-color: #003f7d; color: white;">
-                <th>Item Name</th>
+                <th>Item</th>
+                <th>JDE #</th>
                 <th>Location</th>
-                <th>Quantity</th>
+                <th>Vendor</th>
+                <th>Part #</th>
+                <th>ROP</th>
+                <th>Prev Week Order</th>
+                <th>Qty</th>
                 <th>Manage</th>
             </tr>
         </thead>
-        <tbody id="table-body">
-            </tbody>
+        <tbody id="table-body"></tbody>
     </table>
     
     <br>
@@ -83,6 +139,7 @@
 
 <script type="module">
     import { doc, updateDoc, increment, addDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
     // WE MUST USE HTTPS LINKS FOR GITHUB PAGES
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
@@ -98,11 +155,13 @@
     measurementId: "G-2GQ2P8MTT1"
 };
 
-const app = initializeApp(firebaseConfig);
+    const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
     const provider = new GoogleAuthProvider();
 
+    
+    
     window.login = async () => {
     try {
         // This line opens the popup and WAITS for the result
@@ -126,6 +185,37 @@ const app = initializeApp(firebaseConfig);
     }
 };
 
+    window.logout = async () => {
+        try {
+            await signOut(auth);
+            alert("Logged out successfully");
+            // Reset the UI
+            document.getElementById('logout-btn').style.display = 'none';
+            document.getElementById('inventory-table').style.display = 'none';
+            document.getElementById('department-selection').style.display = 'none';
+            document.getElementById('login-section').style.display = 'block';
+        } catch (error) {
+            console.error("Logout error", error);
+        }
+    };
+
+    window.goHome = () => {
+    // Only allow going home if the user is actually logged in
+    if (auth.currentUser) {
+        document.getElementById('inventory-table').style.display = 'none';
+        document.getElementById('login-section').style.display = 'none';
+        document.getElementById('department-selection').style.display = 'block';
+        
+        // Optional: Clear the search input when going back
+        if(document.getElementById('searchInput')) {
+            document.getElementById('searchInput').value = "";
+        }
+    } else {
+        // If they aren't logged in, ensure they see the login screen
+        document.getElementById('login-section').style.display = 'block';
+    }
+};
+
 window.adjustQty = async (itemId, amount) => {
     const itemRef = doc(db, "departments", window.currentDept, "inventory", itemId);
     try {
@@ -139,22 +229,31 @@ window.adjustQty = async (itemId, amount) => {
 };
 
 window.addNewItem = async () => {
-    // We use prompts for now because they are the easiest 'popups' to code
-    const name = prompt("Enter Item Name (e.g., Hydrochloric Acid):");
-    const loc = prompt("Enter Location (e.g., Shelf B-4):");
-    const qtyInput = prompt("Enter Initial Quantity:");
-    const qty = parseInt(qtyInput);
+    const name = prompt("Item Name:");
+    const jde = prompt("JDE #:");
+    const loc = prompt("Location:");
+    const vendor = prompt("Vendor:");
+    const partNum = prompt("Part Number:");
+    const rop = prompt("ROP (Reorder Point):");
+    const prevOrder = prompt("Prev Week Order:");
+    const qty = parseInt(prompt("Current Quantity:"));
 
-    if (name && loc && !isNaN(qty)) {
+    if (name && !isNaN(qty)) {
         try {
             await addDoc(collection(db, "departments", window.currentDept, "inventory"), {
                 name: name,
+                jde: jde,
                 location: loc,
-                qty: qty
+                vendor: vendor,
+                partNum: partNum,
+                rop: rop,
+                prevOrder: prevOrder,
+                qty: qty,
+                timestamp: new Date() // Good for tracking
             });
-            loadInventory(window.currentDept); // Refresh the table automatically
+            loadInventory(window.currentDept);
         } catch (e) {
-            alert("Error: Could not add item. Check your Firebase Rules.");
+            alert("Error adding item: " + e.message);
         }
     }
 };
@@ -185,30 +284,43 @@ window.addNewItem = async () => {
 };
 
     window.loadInventory = async (dept) => {
-    window.currentDept = dept; // Store this globally to use in other functions
+    window.currentDept = dept; 
     const tbody = document.getElementById('table-body');
-    tbody.innerHTML = "<tr><td colspan='4'>Loading inventory...</td></tr>";
+    tbody.innerHTML = "<tr><td colspan='9'>Loading Inventory...</td></tr>";
 
     try {
         const querySnapshot = await getDocs(collection(db, "departments", dept, "inventory"));
         tbody.innerHTML = ""; 
-        querySnapshot.forEach((documentSnapshot) => {
-            const item = documentSnapshot.data();
-            const itemId = documentSnapshot.id;
+
+        if (querySnapshot.empty) {
+            tbody.innerHTML = "<tr><td colspan='9'>No items found. Click '+ Add Item' to start.</td></tr>";
+            return;
+        }
+
+        querySnapshot.forEach((docSnap) => {
+            const item = docSnap.data();
+            const itemId = docSnap.id;
             const row = `<tr>
-              <td>${item.name}</td>
-              <td>${item.location}</td>
-              <td style="text-align:center; font-weight:bold;">${item.qty}</td>
-              <td>
-                  <button onclick="adjustQty('${documentSnapshot.id}', 1)" style="background-color:#a6cf1a; padding:5px 10px; margin:2px;">+</button>
-                  <button onclick="adjustQty('${documentSnapshot.id}', -1)" style="background-color:#ff4d4d; padding:5px 10px; margin:2px;">-</button>
-              </td>
-          </tr>`;
+                <td style="font-weight: bold;">${item.name || '-'}</td>
+                <td>${item.jde || '-'}</td>
+                <td>${item.location || '-'}</td>
+                <td>${item.vendor || '-'}</td>
+                <td>${item.partNum || '-'}</td>
+                <td>${item.rop || '-'}</td>
+                <td>${item.prevOrder || '-'}</td>
+                <td style="text-align:center; font-weight:bold; font-size: 1.1em;">${item.qty || 0}</td>
+                <td>
+                    <div style="display: flex; gap: 5px;">
+                        <button onclick="adjustQty('${itemId}', 1)" style="background-color:#a6cf1a; padding: 5px 12px;">+</button>
+                        <button onclick="adjustQty('${itemId}', -1)" style="background-color:#ff4d4d; padding: 5px 12px;">-</button>
+                    </div>
+                </td>
+            </tr>`;
             tbody.innerHTML += row;
         });
     } catch (e) {
-        console.error(e);
-        tbody.innerHTML = "<tr><td colspan='4'>Error loading data. Check Permissions.</td></tr>";
+        console.error("Fetch error:", e);
+        tbody.innerHTML = "<tr><td colspan='9' style='color:red;'>Error loading data. Check Firestore Rules.</td></tr>";
     }
 };
 
@@ -216,6 +328,15 @@ window.addNewItem = async () => {
         document.getElementById('inventory-table').style.display = 'none';
         document.getElementById('department-selection').style.display = 'block';
     };
+
+    // This runs automatically whenever the "Auth State" changes
+    auth.onAuthStateChanged((user) => {
+        if (user && user.email === "tylercollinson8@gmail.com") {
+            document.getElementById('login-section').style.display = 'none';
+            document.getElementById('department-selection').style.display = 'block';
+            document.getElementById('logout-btn').style.display = 'block';
+        }
+    });
 </script>
 </body>
 </html>
