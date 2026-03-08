@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="./assets/logo.png" type="image/x-icon">
     <title>Warehouse Management</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: white; color: #003f7d; margin: 0; padding: 20px; }
         
         /* Layout Containers */
-        .container { max-width: 900px; margin: auto; text-align: center; }
+        .container { max-width: auto; margin: auto; text-align: center; }
 
         /* FLEXBOX HEADER */
         .main-header {
@@ -52,11 +53,54 @@
         }
         
         button:hover { background-color: #003f7d; transform: translateY(-2px); }
+
+        /* Update the Department Selection container */
+        .dept-grid {
+            display: grid;
+            /* This creates 2 columns on mobile, 3 on desktop */
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            padding: 20px 0;
+        }
+
+        .dept-grid button {
+            margin: 0; /* Remove old margins */
+            height: 100px; /* Make them big 'tiles' */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            background-color: #003f7d; /* Dark blue for a 'pro' look */
+            border: 2px solid #00acec;
+            border-radius: 12px;
+        }
+
+        .dept-grid button:hover {
+            background-color: #00acec;
+            border-color: #a6cf1a;
+        }
+
         
         .dept-card {
             border: 2px solid #a6cf1a; /* Your Lime Green */
             padding: 30px; margin: 20px 0; border-radius: 12px;
             background-color: #f9f9f9;
+        }
+
+        /* Add this to your style section */
+        .action-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+        }
+
+        @media (max-width: 768px) {
+            #inventory-table table {
+                display: block;
+                overflow-x: auto; /* Makes table scrollable on phones */
+                white-space: nowrap;
+            }
         }
 
         h2, h3 { color: #003f7d; padding-bottom: 10px; }
@@ -89,32 +133,35 @@
 
     <div id="department-selection" style="display:none;">
     <h2>Select Department</h2>
-    <div class="dept-card" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-        <button onclick="askForPin('chemistry')">Chemistry</button>
-        <button onclick="askForPin('prep')">Sample Prep</button>
-        <button onclick="askForPin('micro')">Micro</button>
-        <button onclick="askForPin('micro-misc')">Micro - Misc</button>
-        <button onclick="askForPin('staples')">Staples</button>
-        <button onclick="askForPin('allergen')">Allergen</button>
-        <button onclick="askForPin('facilities')">Facilities</button>
-        <button onclick="askForPin('safety')">Safety</button>
-        <button onclick="askForPin('media')">Media</button>
-        <button onclick="askForPin('masterclave')">Masterclave</button>
-        <button onclick="askForPin('media-ith')">Media - ITH</button>
-    </div>
+        <div class="dept-grid"></div>
+            <div class="dept-card" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <button onclick="askForPin('chemistry')">Chemistry</button>
+                <button onclick="askForPin('prep')">Sample Prep</button>
+                <button onclick="askForPin('micro')">Micro</button>
+                <button onclick="askForPin('micro-misc')">Micro - Misc</button>
+                <button onclick="askForPin('staples')">Staples</button>
+                <button onclick="askForPin('allergen')">Allergen</button>
+                <button onclick="askForPin('facilities')">Facilities</button>
+                <button onclick="askForPin('safety')">Safety</button>
+                <button onclick="askForPin('media')">Media</button>
+                <button onclick="askForPin('masterclave')">Masterclave</button>
+                <button onclick="askForPin('media-ith')">Media - ITH</button>
+            </div>
+        </div>  
 </div>
 
     <div id="inventory-table" style="display:none;">
-    <h3 id="dept-title" style="color: #003f7d; border-bottom: 3px solid #a6cf1a;"></h3>
-    
-    <div style="margin-bottom: 20px;">
-        <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search item names..." 
-               style="padding: 10px; width: 80%; border: 1px solid #00acec; border-radius: 5px;">
-    </div>
-
-    <div style="text-align: right;">
-      <button onclick="addNewItem()" style="background-color: #a6cf1a;">+ Add New Item</button>
-  </div>
+        <h3 id="dept-title" style="color: #003f7d; border-bottom: 3px solid #a6cf1a;"></h3>
+        
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+            <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search item names..." 
+                style="padding: 10px; flex: 1; min-width: 200px; border: 1px solid #00acec; border-radius: 5px;">
+            
+            <div style="display: flex; gap: 10px;">
+                <button onclick="addNewItem()" style="background-color: #a6cf1a; margin: 0;">+ Add Item</button>
+                <button onclick="deleteDepartmentItem()" style="background-color: #ff4d4d; margin: 0;">Delete Item</button>
+            </div>
+        </div>
 
     <table>
         <thead>
@@ -140,7 +187,7 @@
 <script type="module">
     import { doc, updateDoc, increment, addDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
     import { signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-    // WE MUST USE HTTPS LINKS FOR GITHUB PAGES
+    // import { doc, updateDoc, increment, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
     import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
@@ -258,6 +305,36 @@ window.addNewItem = async () => {
     }
 };
 
+window.deleteDepartmentItem = async () => {
+    const itemName = prompt("Type the EXACT name of the item you want to delete:");
+    if (!itemName) return;
+
+    const confirmDelete = confirm(`Are you sure you want to permanently delete "${itemName}"? This cannot be undone.`);
+    
+    if (confirmDelete) {
+        try {
+            const querySnapshot = await getDocs(collection(db, "departments", window.currentDept, "inventory"));
+            let found = false;
+
+            querySnapshot.forEach(async (docSnap) => {
+                if (docSnap.data().name === itemName) {
+                    await deleteDoc(doc(db, "departments", window.currentDept, "inventory", docSnap.id));
+                    found = true;
+                }
+            });
+
+            if (found) {
+                alert("Item deleted successfully.");
+                loadInventory(window.currentDept);
+            } else {
+                alert("Item not found. Please check the spelling (it is case-sensitive).");
+            }
+        } catch (e) {
+            alert("Error deleting item: " + e.message);
+        }
+    }
+};
+
     window.askForPin = (dept) => {
         const pin = prompt("Enter PIN for " + dept);
         if (pin === "1234" || pin === "9999") { 
@@ -337,6 +414,269 @@ window.addNewItem = async () => {
             document.getElementById('logout-btn').style.display = 'block';
         }
     });
+
+//     /* AUTO IMPORT SCRIPT*/
+//     window.importAllergenData = async () => {
+//     // PASTE YOUR JSON DATA FROM TABLECONVERT HERE
+//     const excelData = [
+//   {
+//     "=\"Item\"": "=\"ELISA Egg Kit (Morinaga)\"",
+//     "=\"JDE #\"": "=\"PCHEMIC03013\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"Crystal Chem\"",
+//     "=\"Part Number \"": "=\"M2111\"",
+//     "=\"ROP\"": "=\"2\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Veratox Almond Kit\"",
+//     "=\"JDE #\"": "=\"PMEDIAX00774\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"NEOGEN\"",
+//     "=\"Part Number \"": "=\"8440\"",
+//     "=\"ROP\"": "=\"2\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Veratox Milk Kit\"",
+//     "=\"JDE #\"": "=\"PMEDIAX00776\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"NEOGEN\"",
+//     "=\"Part Number \"": "=\"8470\"",
+//     "=\"ROP\"": "=\"5\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Veratox Soy Allergen Kit\"",
+//     "=\"JDE #\"": "=\"PMEDIAX00769\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"NEOGEN\"",
+//     "=\"Part Number \"": "=\"8410\"",
+//     "=\"ROP\"": "=\"4\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Veratox Peanut Kit\"",
+//     "=\"JDE #\"": "=\"PMEDIAX00772\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"NEOGEN\"",
+//     "=\"Part Number \"": "=\"1923-1\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Veratox Gliadin R5\"",
+//     "=\"JDE #\"": "=\"PMEDIAX00779\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"NEOGEN\"",
+//     "=\"Part Number \"": "=\"8510\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Gliadin Renaturing Cocktail\"",
+//     "=\"JDE #\"": "=\"PCHEMIC99998\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"NEOGEN\"",
+//     "=\"Part Number \"": "=\"8515B\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Reveal Multi Tree Nut Allergen Kit\"",
+//     "=\"JDE #\"": "=\"PCHEMIC03207\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"NEOGEN\"",
+//     "=\"Part Number \"": "=\"8555\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Swabbing Kit\"",
+//     "=\"JDE #\"": "=\"PGLASSP00966\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"NEOGEN\"",
+//     "=\"Part Number \"": "=\"8432S\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"RIDAScreen Peanut Kit\"",
+//     "=\"JDE #\"": "=\"PMEDIAX04959\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"r-Biopharm\"",
+//     "=\"Part Number \"": "=\"R6811\"",
+//     "=\"ROP\"": "=\"2\""
+//   },
+//   {
+//     "=\"Item\"": "=\"RIDAScreen FAST Sesame Kit\"",
+//     "=\"JDE #\"": "=\"PMEDIAX04795\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"r-Biopharm\"",
+//     "=\"Part Number \"": "=\"R7202\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"RIDAScreen FAST Milk Kit\"",
+//     "=\"JDE #\"": "=\"PMEDIAX04482\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"r-Biopharm\"",
+//     "=\"Part Number \"": "=\"R4652\"",
+//     "=\"ROP\"": "=\"2\""
+//   },
+//   {
+//     "=\"Item\"": "=\"RIDAScreen Gliadin\"",
+//     "=\"JDE #\"": "=\"PCHEMIC00953\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"r-Biopharm\"",
+//     "=\"Part Number \"": "=\"R7001\"",
+//     "=\"ROP\"": "=\"2\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Cocktail (patented), 1L\"",
+//     "=\"JDE #\"": "=\"PCHEMIC02870\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"r-Biopharm\"",
+//     "=\"Part Number \"": "=\"R7016\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Bovine Serum Albumin\"",
+//     "=\"JDE #\"": "=\"PMEDIAX00946\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"Sigma\"",
+//     "=\"Part Number \"": "=\"A7888-10G\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Thimersol\"",
+//     "=\"JDE #\"": "=\"PMEDIAX99999\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"Sigma\"",
+//     "=\"Part Number \"": "=\"T5125-10G\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Carboxymethyl Cellulose Sodium\"",
+//     "=\"JDE #\"": "=\"PCHEMIC99998\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"Sigma\"",
+//     "=\"Part Number \"": "=\"C9481-500G\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"ARGO Cornstarch, 3 pack\"",
+//     "=\"JDE #\"": "=\"PSUPPLY99997\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"Amazon\"",
+//     "=\"Part Number \"": "=\"ARGO Corn Starch\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"General Mills Rice Chex\"",
+//     "=\"JDE #\"": "=\"PSUPPLY99997\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"Amazon\"",
+//     "=\"Part Number \"": "=\"Rice Chex\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"8oz. Wide Mouth Plastic Jar\"",
+//     "=\"JDE #\"": "=\"PSUPPLY02437\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"Uline\"",
+//     "=\"Part Number \"": "=\"S18070\"",
+//     "=\"ROP\"": "=\"4\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Well Holder\"",
+//     "=\"JDE #\"": "=\"PSUPPLY99997\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"NEOGEN\"",
+//     "=\"Part Number \"": "=\"9402\"",
+//     "=\"ROP\"": "=\"4\""
+//   },
+//   {
+//     "=\"Item\"": "=\"4700 Stat Fax Printer Paper\"",
+//     "=\"JDE #\"": "=\"PSUPPLY99997\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"NEOGEN\"",
+//     "=\"Part Number \"": "=\"9319\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Microcentrifuge tubes 2.0mL\"",
+//     "=\"JDE #\"": "=\"PGLASSP00262\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"FISHER\"",
+//     "=\"Part Number \"": "=\"05-408-138\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Amber Screw Cap Micro Tubes\"",
+//     "=\"JDE #\"": "=\"PGLASSP99999\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"FISHER\"",
+//     "=\"Part Number \"": "=\"14-755-273\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Amber Screw Cap Micro Tubes Caps\"",
+//     "=\"JDE #\"": "=\"PGLASSP99999\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"FISHER\"",
+//     "=\"Part Number \"": "=\"3471A\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"30mL Wheaton Bottles \"",
+//     "=\"JDE #\"": "=\"PGLASSP99999\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"FISHER\"",
+//     "=\"Part Number \"": "=\"03-083-3\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"1N HCL\"",
+//     "=\"JDE #\"": "=\"PCHEMIC99998\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"FISHER\"",
+//     "=\"Part Number \"": "=\"60-007-66\"",
+//     "=\"ROP\"": "=\"1\""
+//   },
+//   {
+//     "=\"Item\"": "=\"Nonfat Dry Milk\"",
+//     "=\"JDE #\"": "=\"PMEDIAX04505\"",
+//     "=\"Location\"": "=\"Chem Lab\"",
+//     "=\"Vendor\"": "=\"Culture Media Concepts\"",
+//     "=\"Part Number \"": "=\"G577-325g\"",
+//     "=\"ROP\"": "=\"1\""
+//   }
+// ]
+// const colRef = collection(db, "departments", "allergen", "inventory");
+
+//     // Helper function to clean the "Formula" junk
+//     const clean = (val) => {
+//         if (!val) return "-";
+//         // Removes =" and the trailing "
+//         return val.replace(/^=\"/, '').replace(/\"$/, '');
+//     };
+
+//     console.log("Starting Clean Import...");
+    
+//     for (const row of excelData) {
+//         try {
+//             // We use Object.keys(row)[0] to find the "Item" column even if it's named messy
+//             // But manually mapping is safer:
+//             await addDoc(colRef, {
+//                 name: clean(row['="Item"']),
+//                 jde: clean(row['="JDE #"']),
+//                 location: clean(row['="Location"']),
+//                 vendor: clean(row['="Vendor"']),
+//                 partNum: clean(row['="Part Number "']),
+//                 rop: clean(row['="ROP"']),
+//                 prevOrder: "-", 
+//                 qty: 0          
+//             });
+//             console.log("Added Cleaned Item:", clean(row['="Item"']));
+//         } catch (e) {
+//             console.error("Error:", e);
+//         }
+//     }
+//     alert("Allergen Import Complete with Clean Data!");
+// };
+//     /* AUTO IMPORT SCRIPT*/
 </script>
 </body>
 </html>
