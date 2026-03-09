@@ -159,7 +159,6 @@
             
             <div style="display: flex; gap: 10px;">
                 <button onclick="addNewItem()" style="background-color: #a6cf1a; margin: 0;">+ Add Item</button>
-                <button onclick="deleteDepartmentItem()" style="background-color: #ff4d4d; margin: 0;">Delete Item</button>
             </div>
         </div>
 
@@ -185,7 +184,7 @@
 </div>
 
 <script type="module">
-    import { doc, updateDoc, increment, addDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { doc, updateDoc, increment, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
     import { signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
     // import { doc, updateDoc, increment, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -263,6 +262,76 @@
     }
 };
 
+// Open the modal and fill it with current data
+window.openEditModal = (id, item) => {
+    document.getElementById('edit-id').value = id;
+    document.getElementById('edit-name').value = item.name || '';
+    document.getElementById('edit-jde').value = item.jde || '';
+    document.getElementById('edit-loc').value = item.location || '';
+    document.getElementById('edit-vendor').value = item.vendor || '';
+    document.getElementById('edit-part').value = item.partNum || '';
+    document.getElementById('edit-rop').value = item.rop || '';
+    document.getElementById('edit-prev').value = item.prevOrder || '';
+    document.getElementById('edit-qty').value = item.qty || 0;
+    document.getElementById('editModal').style.display = 'flex';
+
+    // Handle the Timestamp display
+    const modText = document.getElementById('last-modified-text');
+    if (item.lastUpdated) {
+        // Firebase timestamps need to be converted to JS dates
+        const date = item.lastUpdated.seconds ? new Date(item.lastUpdated.seconds * 1000) : new Date(item.lastUpdated);
+        modText.innerText = "Last modified: " + date.toLocaleString();
+    } else {
+        modText.innerText = "Last modified: Never";
+    }
+
+    document.getElementById('editModal').style.display = 'flex';
+};
+
+
+window.closeModal = () => {
+    document.getElementById('editModal').style.display = 'none';
+};
+
+window.saveEdit = async () => {
+    const id = document.getElementById('edit-id').value;
+    const itemRef = doc(db, "departments", window.currentDept, "inventory", id);
+    
+    const updatedData = {
+        name: document.getElementById('edit-name').value,
+        jde: document.getElementById('edit-jde').value,
+        location: document.getElementById('edit-loc').value,
+        vendor: document.getElementById('edit-vendor').value,
+        partNum: document.getElementById('edit-part').value,
+        rop: document.getElementById('edit-rop').value,
+        prevOrder: document.getElementById('edit-prev').value,
+        qty: parseInt(document.getElementById('edit-qty').value) || 0,
+        lastUpdated: new Date() // <--- RECORDS THE TIME OF EDIT
+    };
+
+    try {
+        await updateDoc(itemRef, updatedData);
+        closeModal();
+        loadInventory(window.currentDept);
+    } catch (e) {
+        alert("Update failed: " + e.message);
+    }
+};
+
+window.deleteCurrentItem = async () => {
+    const id = document.getElementById('edit-id').value;
+    const name = document.getElementById('edit-name').value;
+    if (confirm(`Permanently delete ${name}?`)) {
+        try {
+            await deleteDoc(doc(db, "departments", window.currentDept, "inventory", id));
+            closeModal();
+            loadInventory(window.currentDept);
+        } catch (e) {
+            alert("Delete failed.");
+        }
+    }
+};
+
 window.adjustQty = async (itemId, amount) => {
     const itemRef = doc(db, "departments", window.currentDept, "inventory", itemId);
     try {
@@ -301,36 +370,6 @@ window.addNewItem = async () => {
             loadInventory(window.currentDept);
         } catch (e) {
             alert("Error adding item: " + e.message);
-        }
-    }
-};
-
-window.deleteDepartmentItem = async () => {
-    const itemName = prompt("Type the EXACT name of the item you want to delete:");
-    if (!itemName) return;
-
-    const confirmDelete = confirm(`Are you sure you want to permanently delete "${itemName}"? This cannot be undone.`);
-    
-    if (confirmDelete) {
-        try {
-            const querySnapshot = await getDocs(collection(db, "departments", window.currentDept, "inventory"));
-            let found = false;
-
-            querySnapshot.forEach(async (docSnap) => {
-                if (docSnap.data().name === itemName) {
-                    await deleteDoc(doc(db, "departments", window.currentDept, "inventory", docSnap.id));
-                    found = true;
-                }
-            });
-
-            if (found) {
-                alert("Item deleted successfully.");
-                loadInventory(window.currentDept);
-            } else {
-                alert("Item not found. Please check the spelling (it is case-sensitive).");
-            }
-        } catch (e) {
-            alert("Error deleting item: " + e.message);
         }
     }
 };
@@ -385,12 +424,10 @@ window.deleteDepartmentItem = async () => {
                 <td>${item.partNum || '-'}</td>
                 <td>${item.rop || '-'}</td>
                 <td>${item.prevOrder || '-'}</td>
-                <td style="text-align:center; font-weight:bold; font-size: 1.1em;">${item.qty || 0}</td>
+                <td style="text-align:center; font-weight:bold;">${item.qty || 0}</td>
                 <td>
-                    <div style="display: flex; gap: 5px;">
-                        <button onclick="adjustQty('${itemId}', 1)" style="background-color:#a6cf1a; padding: 5px 12px;">+</button>
-                        <button onclick="adjustQty('${itemId}', -1)" style="background-color:#ff4d4d; padding: 5px 12px;">-</button>
-                    </div>
+                    <button onclick='openEditModal("${itemId}", ${JSON.stringify(item).replace(/'/g, "&apos;")})' 
+                            style="background-color:#003f7d; padding: 5px 12px; margin:0; font-size:12px;">Edit</button>
                 </td>
             </tr>`;
             tbody.innerHTML += row;
@@ -678,6 +715,65 @@ window.deleteDepartmentItem = async () => {
 // };
 //     /* AUTO IMPORT SCRIPT*/
 </script>
+
+<div id="editModal" style="display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; background-color: rgba(0,0,0,0.7); align-items:center; justify-content:center;">
+    <div class="dept-card" style="background-color: white; width: 95%; max-width: 500px; text-align: left; max-height: 90vh; overflow-y: auto;">
+        <h2 style="margin-top:0; border-bottom: 2px solid #00acec;">Modify Item</h2>
+        <input type="hidden" id="edit-id">
+        
+        <label style="font-size: 12px; font-weight: bold;">Item Name</label>
+        <input type="text" id="edit-name" style="width:100%; padding:8px; margin-bottom:10px; border:1px solid #ddd; border-radius:4px;">
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div>
+                <label style="font-size: 12px; font-weight: bold;">JDE #</label>
+                <input type="text" id="edit-jde" style="width:100%; padding:8px; margin-bottom:10px; border:1px solid #ddd;">
+            </div>
+            <div>
+                <label style="font-size: 12px; font-weight: bold;">Location</label>
+                <input type="text" id="edit-loc" style="width:100%; padding:8px; margin-bottom:10px; border:1px solid #ddd;">
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div>
+                <label style="font-size: 12px; font-weight: bold;">Vendor</label>
+                <input type="text" id="edit-vendor" style="width:100%; padding:8px; margin-bottom:10px; border:1px solid #ddd;">
+            </div>
+            <div>
+                <label style="font-size: 12px; font-weight: bold;">Part #</label>
+                <input type="text" id="edit-part" style="width:100%; padding:8px; margin-bottom:10px; border:1px solid #ddd;">
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div>
+                <label style="font-size: 12px; font-weight: bold;">ROP</label>
+                <input type="text" id="edit-rop" style="width:100%; padding:8px; margin-bottom:10px; border:1px solid #ddd;">
+            </div>
+            <div>
+                <label style="font-size: 12px; font-weight: bold;">Quantity</label>
+                <input type="number" id="edit-qty" style="width:100%; padding:8px; margin-bottom:10px; border:1px solid #00acec; font-weight: bold;">
+            </div>
+        </div>
+
+        <label style="font-size: 12px; font-weight: bold;">Prev Week Order</label>
+        <input type="text" id="edit-prev" style="width:100%; padding:8px; margin-bottom:20px; border:1px solid #ddd;">
+        
+        <p id="last-modified-text" style="font-size: 11px; color: #666; margin-bottom: 15px; font-style: italic;"></p>
+
+        <div style="display:flex; justify-content: space-between; align-items: center;">
+            </div>
+
+        <div style="display:flex; justify-content: space-between; align-items: center;">
+            <button onclick="deleteCurrentItem()" style="background-color: #ff4d4d; padding: 8px 15px; font-size: 12px;">Delete Item</button>
+            <div style="display:flex; gap: 10px;">
+                <button onclick="closeModal()" style="background-color: #999; padding: 8px 15px;">Cancel</button>
+                <button onclick="saveEdit()" style="background-color: #a6cf1a; padding: 8px 15px;">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
 </body>
 </html>
 
