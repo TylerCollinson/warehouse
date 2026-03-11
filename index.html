@@ -95,6 +95,20 @@
             gap: 15px;
         }
 
+        /* flag icon and manage cell */
+        .flag-icon {
+            width: 20px;
+            height: 20px;
+            vertical-align: middle;
+            margin-left: 8px;
+        }
+        .manage-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        /* flag icon and manage cell */
+
         @media (max-width: 768px) {
             #inventory-table table {
                 display: block;
@@ -306,7 +320,7 @@ window.saveEdit = async () => {
         rop: document.getElementById('edit-rop').value,
         prevOrder: document.getElementById('edit-prev').value,
         qty: parseInt(document.getElementById('edit-qty').value) || 0,
-        lastUpdated: new Date() // <--- RECORDS THE TIME OF EDIT
+        lastUpdated: new Date() 
     };
 
     try {
@@ -414,24 +428,37 @@ window.addNewItem = async () => {
         }
 
         querySnapshot.forEach((docSnap) => {
-            const item = docSnap.data();
-            const itemId = docSnap.id;
-            const row = `<tr>
-                <td style="font-weight: bold;">${item.name || '-'}</td>
-                <td>${item.jde || '-'}</td>
-                <td>${item.location || '-'}</td>
-                <td>${item.vendor || '-'}</td>
-                <td>${item.partNum || '-'}</td>
-                <td>${item.rop || '-'}</td>
-                <td>${item.prevOrder || '-'}</td>
-                <td style="text-align:center; font-weight:bold;">${item.qty || 0}</td>
-                <td>
+    const item = docSnap.data();
+    const itemId = docSnap.id;
+
+    // ROP Calculation Logic
+    const currentQty = parseInt(item.qty) || 0;
+    const reorderPoint = parseInt(item.rop) || 0;
+    const isLow = currentQty <= reorderPoint && reorderPoint > 0;
+
+    // SVG Icons
+    const redFlag = `<svg class="flag-icon" viewBox="0 0 24 24" fill="#ff4d4d"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
+    const blackFlag = `<svg class="flag-icon" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
+
+        const row = `<tr>
+            <td style="font-weight: bold;">${item.name || '-'}</td>
+            <td>${item.jde || '-'}</td>
+            <td>${item.location || '-'}</td>
+            <td>${item.vendor || '-'}</td>
+            <td>${item.partNum || '-'}</td>
+            <td>${item.rop || '-'}</td>
+            <td>${item.prevOrder || '-'}</td>
+            <td style="text-align:center; font-weight:bold; color: ${isLow ? '#ff4d4d' : 'inherit'};">${currentQty}</td>
+            <td>
+                <div class="manage-cell">
                     <button onclick='openEditModal("${itemId}", ${JSON.stringify(item).replace(/'/g, "&apos;")})' 
                             style="background-color:#003f7d; padding: 5px 12px; margin:0; font-size:12px;">Edit</button>
-                </td>
-            </tr>`;
-            tbody.innerHTML += row;
-        });
+                    ${isLow ? redFlag : blackFlag}
+                </div>
+            </td>
+        </tr>`;
+        tbody.innerHTML += row;
+    });
     } catch (e) {
         console.error("Fetch error:", e);
         tbody.innerHTML = "<tr><td colspan='9' style='color:red;'>Error loading data. Check Firestore Rules.</td></tr>";
