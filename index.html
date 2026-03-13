@@ -483,7 +483,6 @@ window.repairDatabase = async () => {
     searchTimeout = setTimeout(async () => {
         const searchTerm = document.getElementById("searchInput").value;
         const tbody = document.getElementById("table-body");
-        const loadMoreBtn = document.getElementById("load-more-btn");
 
         // If search is empty, just reload the normal first page
         if (!searchTerm) {
