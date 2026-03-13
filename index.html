@@ -95,6 +95,23 @@
             gap: 15px;
         }
 
+        /* Loading Spinner Animation */
+        .spinner {
+            width: 30px;
+            height: 30px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #00acec; /* Your light blue */
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: none; /* Hidden by default */
+            margin: 10px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         /* flag icon and manage cell */
         .flag-icon {
             width: 20px;
@@ -194,17 +211,45 @@
     </table>
     
     <br>
-    <button onclick="backToProfiles()" style="background-color: #003f7d;">← Change Department</button>
+
+    <div id="scroll-sentinel" style="height: 20px; margin-top: 10px;">
+             <div id="scroll-sentinel" style="text-align: center; padding: 20px;">
+         <div id="loading-spinner" class="spinner"></div>
+        </div>
+    </div>
+<button onclick="backToProfiles()" style="background-color: #003f7d;">← Change Department</button>
 </div>
 
 <script type="module">
-    import { doc, updateDoc, increment, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-    import { signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-    // import { doc, updateDoc, increment, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    // 1. Core App
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 
+// 2. Auth (Combined: signOut, getAuth, GoogleAuthProvider, signInWithPopup)
+import { 
+    getAuth, 
+    GoogleAuthProvider, 
+    signInWithPopup, 
+    signOut, 
+    onAuthStateChanged 
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+// 3. Firestore (Combined & No Duplicates)
+import { 
+    getFirestore, 
+    collection, 
+    getDocs, 
+    doc, 
+    updateDoc, 
+    deleteDoc, 
+    addDoc, 
+    increment,
+    query, 
+    where, 
+    orderBy, 
+    limit, 
+    startAfter 
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    
   const firebaseConfig = {
     apiKey: "AIzaSyB_Qs2wlUjeptWIbe1EDQF_jFgSRKBj064",
     authDomain: "warehouse-f7584.firebaseapp.com",
@@ -218,7 +263,12 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
+    let lastVisibleItem = null; // Keeps track of where we are in the list
+    const PAGE_SIZE = 25;       // Number of items per "page"
     const provider = new GoogleAuthProvider();
+    
+    // 1. Variable to prevent double-loading if user scrolls fast
+    let isLoading = false;
 
     
     
@@ -313,6 +363,7 @@ window.saveEdit = async () => {
     
     const updatedData = {
         name: document.getElementById('edit-name').value,
+        name_lowercase: nameValue.toLowerCase(),
         jde: document.getElementById('edit-jde').value,
         location: document.getElementById('edit-loc').value,
         vendor: document.getElementById('edit-vendor').value,
@@ -372,6 +423,7 @@ window.addNewItem = async () => {
         try {
             await addDoc(collection(db, "departments", window.currentDept, "inventory"), {
                 name: name,
+                name_lowercase: name.toLowerCase(),
                 jde: jde,
                 location: loc,
                 vendor: vendor,
@@ -388,6 +440,29 @@ window.addNewItem = async () => {
     }
 };
 
+window.repairDatabase = async () => {
+    const depts = ['chemistry', 'allergen', 'prep', 'micro', 'staples', 'facilities', 'safety', 'media']; 
+    console.log("Starting Database Repair...");
+
+    for (const dept of depts) {
+        const colRef = collection(db, "departments", dept, "inventory");
+        const querySnapshot = await getDocs(colRef);
+        
+        console.log(`Fixing ${dept}...`);
+        
+        for (const docSnap of querySnapshot.docs) {
+            const data = docSnap.data();
+            if (!data.name_lowercase) {
+                await updateDoc(doc(db, "departments", dept, "inventory", docSnap.id), {
+                    name_lowercase: (data.name || "unknown").toLowerCase()
+                });
+                console.log(`   Fixed: ${data.name}`);
+            }
+        }
+    }
+    alert("Repair Complete! All items are now searchable.");
+};
+
     window.askForPin = (dept) => {
         const pin = prompt("Enter PIN for " + dept);
         if (pin === "1234" || pin === "9999") { 
@@ -400,69 +475,138 @@ window.addNewItem = async () => {
         }
     };
 
+    let searchTimeout;
     window.filterTable = () => {
-    const input = document.getElementById("searchInput").value.toUpperCase();
-    const tr = document.getElementById("table-body").getElementsByTagName("tr");
+    // Clear the timeout so we don't ping Firebase on every single keystroke
+    clearTimeout(searchTimeout);
 
-    for (let i = 0; i < tr.length; i++) {
-        let td = tr[i].getElementsByTagName("td")[0]; // Search by Name column
-        if (td) {
-            let txtValue = td.textContent || td.innerText;
-            tr[i].style.display = txtValue.toUpperCase().indexOf(input) > -1 ? "" : "none";
+    searchTimeout = setTimeout(async () => {
+        const searchTerm = document.getElementById("searchInput").value;
+        const tbody = document.getElementById("table-body");
+        const loadMoreBtn = document.getElementById("load-more-btn");
+
+        // If search is empty, just reload the normal first page
+        if (!searchTerm) {
+            loadInventory(window.currentDept);
+            return;
         }
-    }
+
+        tbody.innerHTML = "<tr><td colspan='9'>Searching...</td></tr>";
+
+        try {
+            // FIREBASE QUERY: Search for items starting with the search term
+            // Note: Firebase search is case-sensitive, so we usually store a lowercase 'searchName' field
+            const q = query(
+                collection(db, "departments", window.currentDept, "inventory"),
+                orderBy("name_lowercase"),
+                where("name", ">=", searchTerm),
+                where("name", "<=", searchTerm + "\uf8ff"),
+                limit(25)
+            );
+
+            const querySnapshot = await getDocs(q);
+            tbody.innerHTML = "";
+
+            if (querySnapshot.empty) {
+                tbody.innerHTML = "<tr><td colspan='9'>No matching items found.</td></tr>";
+                loadMoreBtn.style.display = "none";
+                return;
+            }
+
+            querySnapshot.forEach((docSnap) => {
+                const item = docSnap.data();
+                const itemId = docSnap.id;
+                // ... (Use your existing row generation logic here) ...
+                tbody.innerHTML += row;
+            });
+
+        } catch (e) {
+            console.error("Search Error:", e);
+        }
+    }, 500); // Wait 500ms after user stops typing
 };
 
-    window.loadInventory = async (dept) => {
-    window.currentDept = dept; 
+    // 2. Infinite Scroll Watcher
+    const observer = new IntersectionObserver((entries) => {
+    // If the sentinel is visible, we aren't searching, and we aren't already loading...
+    if (entries[0].isIntersecting && !isLoading && !document.getElementById('searchInput').value) {
+        if (lastVisibleItem) {
+            console.log("Sentinel reached: Loading next batch...");
+            loadInventory(window.currentDept, true);
+        }
+    }
+}, { threshold: 1.0 });
+
+   window.loadInventory = async (dept, isNextPage = false) => {
+    if (isLoading) return; // Stop if already fetching
+    isLoading = true;
+
+    const spinner = document.getElementById('loading-spinner');
+    if (spinner) spinner.style.display = 'block';
+    
+    window.currentDept = dept;
     const tbody = document.getElementById('table-body');
-    tbody.innerHTML = "<tr><td colspan='9'>Loading Inventory...</td></tr>";
+
+    if (!isNextPage) {
+        tbody.innerHTML = "<tr><td colspan='9'>Loading...</td></tr>";
+        lastVisibleItem = null; 
+    }
 
     try {
-        const querySnapshot = await getDocs(collection(db, "departments", dept, "inventory"));
-        tbody.innerHTML = ""; 
+        let q;
+        if (lastVisibleItem && isNextPage) {
+            q = query(collection(db, "departments", dept, "inventory"), orderBy("name"), startAfter(lastVisibleItem), limit(PAGE_SIZE));
+        } else {
+            q = query(collection(db, "departments", dept, "inventory"), orderBy("name"), limit(PAGE_SIZE));
+        }
 
-        if (querySnapshot.empty) {
-            tbody.innerHTML = "<tr><td colspan='9'>No items found. Click '+ Add Item' to start.</td></tr>";
+        const querySnapshot = await getDocs(q);
+        if (!isNextPage) tbody.innerHTML = ""; 
+
+        if (querySnapshot.empty && !isNextPage) {
+            tbody.innerHTML = "<tr><td colspan='9'>No items found.</td></tr>";
+            isLoading = false;
             return;
         }
 
         querySnapshot.forEach((docSnap) => {
-    const item = docSnap.data();
-    const itemId = docSnap.id;
+            const item = docSnap.data();
+            const itemId = docSnap.id;
+            
+            // ROP Logic & Icon creation
+            const currentQty = parseInt(item.qty) || 0;
+            const reorderPoint = parseInt(item.rop) || 0;
+            const isLow = currentQty <= reorderPoint && reorderPoint > 0;
+            const redFlag = `<svg class="flag-icon" viewBox="0 0 24 24" fill="#ff4d4d" style="width:20px;"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
+            const blackFlag = `<svg class="flag-icon" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" style="width:20px;"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
 
-    // ROP Calculation Logic
-    const currentQty = parseInt(item.qty) || 0;
-    const reorderPoint = parseInt(item.rop) || 0;
-    const isLow = currentQty <= reorderPoint && reorderPoint > 0;
+            const row = `<tr>
+                <td style="font-weight: bold;">${item.name || '-'}</td>
+                <td>${item.jde || '-'}</td>
+                <td>${item.location || '-'}</td>
+                <td>${item.vendor || '-'}</td>
+                <td>${item.partNum || '-'}</td>
+                <td>${item.rop || '-'}</td>
+                <td>${item.prevOrder || '-'}</td>
+                <td style="text-align:center; font-weight:bold; color: ${isLow ? '#ff4d4d' : 'inherit'};">${currentQty}</td>
+                <td>
+                    <div style="display:flex; align-items:center;">
+                        <button onclick='openEditModal("${itemId}", ${JSON.stringify(item).replace(/'/g, "&apos;")})' 
+                                style="background-color:#003f7d; padding: 5px 12px; margin:0; font-size:12px;">Edit</button>
+                        ${isLow ? redFlag : blackFlag}
+                    </div>
+                </td>
+            </tr>`;
+            tbody.innerHTML += row;
+        });
 
-    // SVG Icons
-    const redFlag = `<svg class="flag-icon" viewBox="0 0 24 24" fill="#ff4d4d"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
-    const blackFlag = `<svg class="flag-icon" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
+        lastVisibleItem = querySnapshot.docs.length === PAGE_SIZE ? querySnapshot.docs[querySnapshot.docs.length - 1] : null;
 
-        const row = `<tr>
-            <td style="font-weight: bold;">${item.name || '-'}</td>
-            <td>${item.jde || '-'}</td>
-            <td>${item.location || '-'}</td>
-            <td>${item.vendor || '-'}</td>
-            <td>${item.partNum || '-'}</td>
-            <td>${item.rop || '-'}</td>
-            <td>${item.prevOrder || '-'}</td>
-            <td style="text-align:center; font-weight:bold; color: ${isLow ? '#ff4d4d' : 'inherit'};">${currentQty}</td>
-            <td>
-                <div class="manage-cell">
-                    <button onclick='openEditModal("${itemId}", ${JSON.stringify(item).replace(/'/g, "&apos;")})' 
-                            style="background-color:#003f7d; padding: 5px 12px; margin:0; font-size:12px;">Edit</button>
-                    ${isLow ? redFlag : blackFlag}
-                </div>
-            </td>
-        </tr>`;
-        tbody.innerHTML += row;
-    });
     } catch (e) {
-        console.error("Fetch error:", e);
-        tbody.innerHTML = "<tr><td colspan='9' style='color:red;'>Error loading data. Check Firestore Rules.</td></tr>";
+        console.error("Load Error:", e);
     }
+    isLoading = false;
+    if (spinner) spinner.style.display = 'none';
 };
 
     window.backToProfiles = () => {
@@ -471,13 +615,15 @@ window.addNewItem = async () => {
     };
 
     // This runs automatically whenever the "Auth State" changes
-    auth.onAuthStateChanged((user) => {
-        if (user && user.email === "tylercollinson8@gmail.com") {
+    onAuthStateChanged(auth, (user) => {
+    if (user && user.email === "tylercollinson8@gmail.com") {
             document.getElementById('login-section').style.display = 'none';
             document.getElementById('department-selection').style.display = 'block';
             document.getElementById('logout-btn').style.display = 'block';
-        }
-    });
+            const sentinel = document.getElementById('scroll-sentinel');
+                if (sentinel) observer.observe(sentinel);
+    }
+});
 
 //     /* AUTO IMPORT SCRIPT*/
 //     window.importAllergenData = async () => {
