@@ -177,6 +177,7 @@
                 <button onclick="askForPin('media')">Media</button>
                 <button onclick="askForPin('masterclave')">Masterclave</button>
                 <button onclick="askForPin('media-ith')">Media - ITH</button>
+                <button onclick="askForPin('admin-inventory')">Admin - Inventory</button>
             </div>
         </div>  
 </div>
@@ -243,11 +244,12 @@ import {
     deleteDoc, 
     addDoc, 
     increment,
-    query, 
-    where, 
-    orderBy, 
-    limit, 
-    startAfter 
+    query,            
+    where,            
+    orderBy,          
+    limit,            
+    startAfter,       
+    collectionGroup   
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
     
   const firebaseConfig = {
@@ -360,11 +362,13 @@ window.closeModal = () => {
 window.saveEdit = async () => {
     const id = document.getElementById('edit-id').value;
     const itemRef = doc(db, "departments", window.currentDept, "inventory", id);
+    const itemName = document.getElementById('edit-name').value;
+    const itemJde = document.getElementById('edit-jde').value;
     
     const updatedData = {
-        name: document.getElementById('edit-name').value,
-        name_lowercase: nameValue.toLowerCase(),
-        jde: document.getElementById('edit-jde').value,
+        name: itemName,
+        jde: itemJde,
+        search_index: `${itemName} ${itemJde}`.toLowerCase().trim(), 
         location: document.getElementById('edit-loc').value,
         vendor: document.getElementById('edit-vendor').value,
         partNum: document.getElementById('edit-part').value,
@@ -425,6 +429,7 @@ window.addNewItem = async () => {
                 name: name,
                 name_lowercase: name.toLowerCase(),
                 jde: jde,
+                search_index: `${name} ${jde}`.toLowerCase().trim(),
                 location: loc,
                 vendor: vendor,
                 partNum: partNum,
@@ -440,90 +445,108 @@ window.addNewItem = async () => {
     }
 };
 
-window.repairDatabase = async () => {
-    const depts = ['chemistry', 'allergen', 'prep', 'micro', 'staples', 'facilities', 'safety', 'media']; 
-    console.log("Starting Database Repair...");
-
-    for (const dept of depts) {
-        const colRef = collection(db, "departments", dept, "inventory");
-        const querySnapshot = await getDocs(colRef);
-        
-        console.log(`Fixing ${dept}...`);
-        
-        for (const docSnap of querySnapshot.docs) {
-            const data = docSnap.data();
-            if (!data.name_lowercase) {
-                await updateDoc(doc(db, "departments", dept, "inventory", docSnap.id), {
-                    name_lowercase: (data.name || "unknown").toLowerCase()
-                });
-                console.log(`   Fixed: ${data.name}`);
-            }
-        }
-    }
-    alert("Repair Complete! All items are now searchable.");
-};
-
     window.askForPin = (dept) => {
-        const pin = prompt("Enter PIN for " + dept);
-        if (pin === "1234" || pin === "9999") { 
-            document.getElementById('department-selection').style.display = 'none';
-            document.getElementById('inventory-table').style.display = 'block';
+    const pin = prompt("Enter PIN for " + dept);
+    if (pin === "9999") { // Maybe only use the master PIN for this?
+        document.getElementById('department-selection').style.display = 'none';
+        document.getElementById('inventory-table').style.display = 'block';
+        
+        if (dept === 'admin-inventory') {
+            document.getElementById('dept-title').innerText = "MASTER WAREHOUSE INVENTORY";
+            loadMasterInventory();
+        } else {
             document.getElementById('dept-title').innerText = dept.toUpperCase() + " Inventory";
             loadInventory(dept);
-        } else {
-            alert("Invalid PIN");
         }
-    };
+    } else {
+        alert("Invalid PIN");
+    }
+};
 
     let searchTimeout;
     window.filterTable = () => {
-    // Clear the timeout so we don't ping Firebase on every single keystroke
-    clearTimeout(searchTimeout);
+        clearTimeout(searchTimeout);
 
-    searchTimeout = setTimeout(async () => {
-        const searchTerm = document.getElementById("searchInput").value;
-        const tbody = document.getElementById("table-body");
+        searchTimeout = setTimeout(async () => {
+            const searchTerm = document.getElementById("searchInput").value.toLowerCase().trim();
+            const tbody = document.getElementById("table-body");
 
-        // If search is empty, just reload the normal first page
         if (!searchTerm) {
             loadInventory(window.currentDept);
             return;
         }
-
         tbody.innerHTML = "<tr><td colspan='9'>Searching...</td></tr>";
-
-        try {
-            // FIREBASE QUERY: Search for items starting with the search term
-            // Note: Firebase search is case-sensitive, so we usually store a lowercase 'searchName' field
-            const q = query(
-                collection(db, "departments", window.currentDept, "inventory"),
-                orderBy("name_lowercase"),
-                where("name", ">=", searchTerm),
-                where("name", "<=", searchTerm + "\uf8ff"),
-                limit(25)
-            );
-
-            const querySnapshot = await getDocs(q);
-            tbody.innerHTML = "";
-
-            if (querySnapshot.empty) {
-                tbody.innerHTML = "<tr><td colspan='9'>No matching items found.</td></tr>";
-                loadMoreBtn.style.display = "none";
-                return;
+        
+            try {
+            // 1. Check if the user is typing a JDE (usually starts with 'p' or is all caps/numbers)
+            // Or just search BOTH fields using a clever trick:
+            
+            let q;
+            // If it looks like a JDE (starts with 'p'), search the JDE field
+            if (searchTerm.startsWith('p')) {
+                q = query(
+                    collection(db, "departments", window.currentDept, "inventory"),
+                    orderBy("jde"), // Search by JDE field instead
+                    where("jde", ">=", searchTerm.toUpperCase()), // JDEs are usually Uppercase in the JDE field
+                    where("jde", "<=", searchTerm.toUpperCase() + "\uf8ff"),
+                    limit(25)
+                );
+            } else {
+                // Otherwise, search by Name/Search Index
+                q = query(
+                    collection(db, "departments", window.currentDept, "inventory"),
+                    orderBy("search_index"),
+                    where("search_index", ">=", searchTerm),
+                    where("search_index", "<=", searchTerm + "\uf8ff"),
+                    limit(25)
+                );
             }
 
-            querySnapshot.forEach((docSnap) => {
-                const item = docSnap.data();
-                const itemId = docSnap.id;
-                // ... (Use your existing row generation logic here) ...
-                tbody.innerHTML += row;
-            });
+                const querySnapshot = await getDocs(q);
+                tbody.innerHTML = "";
 
-        } catch (e) {
-            console.error("Search Error:", e);
-        }
-    }, 500); // Wait 500ms after user stops typing
-};
+                if (querySnapshot.empty) {
+                    tbody.innerHTML = "<tr><td colspan='9'>No matching items found.</td></tr>";
+                    return;
+                }
+
+                querySnapshot.forEach((docSnap) => {
+                    const item = docSnap.data();
+                    const itemId = docSnap.id;
+                    
+                    // 2. Add the Row Generation Logic back in!
+                    const currentQty = parseInt(item.qty) || 0;
+                    const reorderPoint = parseInt(item.rop) || 0;
+                    const isLow = currentQty <= reorderPoint && reorderPoint > 0;
+                    const redFlag = `<svg class="flag-icon" viewBox="0 0 24 24" fill="#ff4d4d" style="width:20px;"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
+                    const blackFlag = `<svg class="flag-icon" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" style="width:20px;"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
+
+                    const row = `<tr>
+                        <td style="font-weight: bold;">${item.name || '-'}</td>
+                        <td>${item.jde || '-'}</td>
+                        <td>${item.location || '-'}</td>
+                        <td>${item.vendor || '-'}</td>
+                        <td>${item.partNum || '-'}</td>
+                        <td>${item.rop || '-'}</td>
+                        <td>${item.prevOrder || '-'}</td>
+                        <td style="text-align:center; font-weight:bold; color: ${isLow ? '#ff4d4d' : 'inherit'};">${currentQty}</td>
+                        <td>
+                            <div class="manage-cell">
+                                <button onclick='openEditModal("${itemId}", ${JSON.stringify(item).replace(/'/g, "&apos;")})' 
+                                        style="background-color:#003f7d; padding: 5px 12px; margin:0; font-size:12px;">Edit</button>
+                                ${isLow ? redFlag : blackFlag}
+                            </div>
+                        </td>
+                    </tr>`;
+                    tbody.innerHTML += row;
+                });
+
+            } catch (e) {
+                console.error("Search Error:", e);
+                // If you see an error here, check the browser console for the Index Link!
+            }
+        }, 500);
+    };
 
     // 2. Infinite Scroll Watcher
     const observer = new IntersectionObserver((entries) => {
@@ -572,12 +595,12 @@ window.repairDatabase = async () => {
             const item = docSnap.data();
             const itemId = docSnap.id;
             
-            // ROP Logic & Icon creation
+            // ROP Logic
             const currentQty = parseInt(item.qty) || 0;
             const reorderPoint = parseInt(item.rop) || 0;
             const isLow = currentQty <= reorderPoint && reorderPoint > 0;
-            const redFlag = `<svg class="flag-icon" viewBox="0 0 24 24" fill="#ff4d4d" style="width:20px;"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
-            const blackFlag = `<svg class="flag-icon" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" style="width:20px;"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
+            const redFlag = `<svg class="flag-icon" viewBox="0 0 24 24" fill="#ff4d4d"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
+            const blackFlag = `<svg class="flag-icon" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
 
             const row = `<tr>
                 <td style="font-weight: bold;">${item.name || '-'}</td>
@@ -589,7 +612,7 @@ window.repairDatabase = async () => {
                 <td>${item.prevOrder || '-'}</td>
                 <td style="text-align:center; font-weight:bold; color: ${isLow ? '#ff4d4d' : 'inherit'};">${currentQty}</td>
                 <td>
-                    <div style="display:flex; align-items:center;">
+                    <div class="manage-cell">
                         <button onclick='openEditModal("${itemId}", ${JSON.stringify(item).replace(/'/g, "&apos;")})' 
                                 style="background-color:#003f7d; padding: 5px 12px; margin:0; font-size:12px;">Edit</button>
                         ${isLow ? redFlag : blackFlag}
@@ -608,6 +631,60 @@ window.repairDatabase = async () => {
     if (spinner) spinner.style.display = 'none';
 };
 
+
+    window.loadMasterInventory = async () => {
+    const tbody = document.getElementById('table-body');
+    tbody.innerHTML = "<tr><td colspan='9'>Loading Master Database...</td></tr>";
+    
+    // We set a dummy dept so other functions don't crash
+    window.currentDept = "master"; 
+
+    try {
+        // collectionGroup looks for ALL collections named "inventory"
+        const masterQuery = query(
+            collectionGroup(db, 'inventory'), 
+            orderBy("name"), 
+            limit(100)
+        );
+
+        const querySnapshot = await getDocs(masterQuery);
+        tbody.innerHTML = "";
+
+        if (querySnapshot.empty) {
+            tbody.innerHTML = "<tr><td colspan='9'>No data found in any department.</td></tr>";
+            return;
+        }
+
+        querySnapshot.forEach((docSnap) => {
+            const item = docSnap.data();
+            const itemId = docSnap.id;
+            
+            // This magic line finds out which department the item lives in
+            // by looking at the "Grandparent" of the document
+            const deptName = docSnap.ref.parent.parent.id;
+
+            const row = `<tr>
+                <td style="font-weight: bold;">[${deptName.toUpperCase()}] ${item.name || '-'}</td>
+                <td>${item.jde || '-'}</td>
+                <td>${item.location || '-'}</td>
+                <td>${item.vendor || '-'}</td>
+                <td>${item.partNum || '-'}</td>
+                <td>${item.rop || '-'}</td>
+                <td>${item.prevOrder || '-'}</td>
+                <td style="text-align:center;">${item.qty || 0}</td>
+                <td><button disabled style="background-color: #ccc;">Master View</button></td>
+            </tr>`;
+            tbody.innerHTML += row;
+        });
+
+    } catch (e) {
+        console.error("Master View Error:", e);
+        alert("Check console for Index Link!");
+    }
+};
+
+
+
     window.backToProfiles = () => {
         document.getElementById('inventory-table').style.display = 'none';
         document.getElementById('department-selection').style.display = 'block';
@@ -625,266 +702,267 @@ window.repairDatabase = async () => {
 });
 
 //     /* AUTO IMPORT SCRIPT*/
-//     window.importAllergenData = async () => {
-//     // PASTE YOUR JSON DATA FROM TABLECONVERT HERE
-//     const excelData = [
-//   {
-//     "=\"Item\"": "=\"ELISA Egg Kit (Morinaga)\"",
-//     "=\"JDE #\"": "=\"PCHEMIC03013\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"Crystal Chem\"",
-//     "=\"Part Number \"": "=\"M2111\"",
-//     "=\"ROP\"": "=\"2\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Veratox Almond Kit\"",
-//     "=\"JDE #\"": "=\"PMEDIAX00774\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"NEOGEN\"",
-//     "=\"Part Number \"": "=\"8440\"",
-//     "=\"ROP\"": "=\"2\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Veratox Milk Kit\"",
-//     "=\"JDE #\"": "=\"PMEDIAX00776\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"NEOGEN\"",
-//     "=\"Part Number \"": "=\"8470\"",
-//     "=\"ROP\"": "=\"5\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Veratox Soy Allergen Kit\"",
-//     "=\"JDE #\"": "=\"PMEDIAX00769\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"NEOGEN\"",
-//     "=\"Part Number \"": "=\"8410\"",
-//     "=\"ROP\"": "=\"4\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Veratox Peanut Kit\"",
-//     "=\"JDE #\"": "=\"PMEDIAX00772\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"NEOGEN\"",
-//     "=\"Part Number \"": "=\"1923-1\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Veratox Gliadin R5\"",
-//     "=\"JDE #\"": "=\"PMEDIAX00779\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"NEOGEN\"",
-//     "=\"Part Number \"": "=\"8510\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Gliadin Renaturing Cocktail\"",
-//     "=\"JDE #\"": "=\"PCHEMIC99998\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"NEOGEN\"",
-//     "=\"Part Number \"": "=\"8515B\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Reveal Multi Tree Nut Allergen Kit\"",
-//     "=\"JDE #\"": "=\"PCHEMIC03207\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"NEOGEN\"",
-//     "=\"Part Number \"": "=\"8555\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Swabbing Kit\"",
-//     "=\"JDE #\"": "=\"PGLASSP00966\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"NEOGEN\"",
-//     "=\"Part Number \"": "=\"8432S\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"RIDAScreen Peanut Kit\"",
-//     "=\"JDE #\"": "=\"PMEDIAX04959\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"r-Biopharm\"",
-//     "=\"Part Number \"": "=\"R6811\"",
-//     "=\"ROP\"": "=\"2\""
-//   },
-//   {
-//     "=\"Item\"": "=\"RIDAScreen FAST Sesame Kit\"",
-//     "=\"JDE #\"": "=\"PMEDIAX04795\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"r-Biopharm\"",
-//     "=\"Part Number \"": "=\"R7202\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"RIDAScreen FAST Milk Kit\"",
-//     "=\"JDE #\"": "=\"PMEDIAX04482\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"r-Biopharm\"",
-//     "=\"Part Number \"": "=\"R4652\"",
-//     "=\"ROP\"": "=\"2\""
-//   },
-//   {
-//     "=\"Item\"": "=\"RIDAScreen Gliadin\"",
-//     "=\"JDE #\"": "=\"PCHEMIC00953\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"r-Biopharm\"",
-//     "=\"Part Number \"": "=\"R7001\"",
-//     "=\"ROP\"": "=\"2\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Cocktail (patented), 1L\"",
-//     "=\"JDE #\"": "=\"PCHEMIC02870\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"r-Biopharm\"",
-//     "=\"Part Number \"": "=\"R7016\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Bovine Serum Albumin\"",
-//     "=\"JDE #\"": "=\"PMEDIAX00946\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"Sigma\"",
-//     "=\"Part Number \"": "=\"A7888-10G\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Thimersol\"",
-//     "=\"JDE #\"": "=\"PMEDIAX99999\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"Sigma\"",
-//     "=\"Part Number \"": "=\"T5125-10G\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Carboxymethyl Cellulose Sodium\"",
-//     "=\"JDE #\"": "=\"PCHEMIC99998\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"Sigma\"",
-//     "=\"Part Number \"": "=\"C9481-500G\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"ARGO Cornstarch, 3 pack\"",
-//     "=\"JDE #\"": "=\"PSUPPLY99997\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"Amazon\"",
-//     "=\"Part Number \"": "=\"ARGO Corn Starch\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"General Mills Rice Chex\"",
-//     "=\"JDE #\"": "=\"PSUPPLY99997\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"Amazon\"",
-//     "=\"Part Number \"": "=\"Rice Chex\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"8oz. Wide Mouth Plastic Jar\"",
-//     "=\"JDE #\"": "=\"PSUPPLY02437\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"Uline\"",
-//     "=\"Part Number \"": "=\"S18070\"",
-//     "=\"ROP\"": "=\"4\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Well Holder\"",
-//     "=\"JDE #\"": "=\"PSUPPLY99997\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"NEOGEN\"",
-//     "=\"Part Number \"": "=\"9402\"",
-//     "=\"ROP\"": "=\"4\""
-//   },
-//   {
-//     "=\"Item\"": "=\"4700 Stat Fax Printer Paper\"",
-//     "=\"JDE #\"": "=\"PSUPPLY99997\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"NEOGEN\"",
-//     "=\"Part Number \"": "=\"9319\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Microcentrifuge tubes 2.0mL\"",
-//     "=\"JDE #\"": "=\"PGLASSP00262\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"FISHER\"",
-//     "=\"Part Number \"": "=\"05-408-138\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Amber Screw Cap Micro Tubes\"",
-//     "=\"JDE #\"": "=\"PGLASSP99999\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"FISHER\"",
-//     "=\"Part Number \"": "=\"14-755-273\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Amber Screw Cap Micro Tubes Caps\"",
-//     "=\"JDE #\"": "=\"PGLASSP99999\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"FISHER\"",
-//     "=\"Part Number \"": "=\"3471A\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"30mL Wheaton Bottles \"",
-//     "=\"JDE #\"": "=\"PGLASSP99999\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"FISHER\"",
-//     "=\"Part Number \"": "=\"03-083-3\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"1N HCL\"",
-//     "=\"JDE #\"": "=\"PCHEMIC99998\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"FISHER\"",
-//     "=\"Part Number \"": "=\"60-007-66\"",
-//     "=\"ROP\"": "=\"1\""
-//   },
-//   {
-//     "=\"Item\"": "=\"Nonfat Dry Milk\"",
-//     "=\"JDE #\"": "=\"PMEDIAX04505\"",
-//     "=\"Location\"": "=\"Chem Lab\"",
-//     "=\"Vendor\"": "=\"Culture Media Concepts\"",
-//     "=\"Part Number \"": "=\"G577-325g\"",
-//     "=\"ROP\"": "=\"1\""
-//   }
-// ]
-// const colRef = collection(db, "departments", "allergen", "inventory");
+    window.importNewData = async () => {
+    // PASTE YOUR JSON DATA FROM TABLECONVERT HERE
+    const excelData = [
+  {
+    "Item": "ELISA Egg Kit (Morinaga)",
+    "JDE #": "PCHEMIC03013",
+    "Location": "Chem Lab",
+    "Vendor": "Crystal Chem",
+    "Part Number": "M2111",
+    "ROP": "2"
+  },
+  {
+    "Item": "Veratox Almond Kit",
+    "JDE #": "PMEDIAX00774",
+    "Location": "Chem Lab",
+    "Vendor": "NEOGEN",
+    "Part Number": "8440",
+    "ROP": "2"
+  },
+  {
+    "Item": "Veratox Milk Kit",
+    "JDE #": "PMEDIAX00776",
+    "Location": "Chem Lab",
+    "Vendor": "NEOGEN",
+    "Part Number": "8470",
+    "ROP": "5"
+  },
+  {
+    "Item": "Veratox Soy Allergen Kit",
+    "JDE #": "PMEDIAX00769",
+    "Location": "Chem Lab",
+    "Vendor": "NEOGEN",
+    "Part Number": "8410",
+    "ROP": "4"
+  },
+  {
+    "Item": "Veratox Peanut Kit",
+    "JDE #": "PMEDIAX00772",
+    "Location": "Chem Lab",
+    "Vendor": "NEOGEN",
+    "Part Number": "8430",
+    "ROP": "1"
+  },
+  {
+    "Item": "Veratox Gliadin R5",
+    "JDE #": "PMEDIAX00779",
+    "Location": "Chem Lab",
+    "Vendor": "NEOGEN",
+    "Part Number": "8510",
+    "ROP": "1"
+  },
+  {
+    "Item": "Gliadin Renaturing Cocktail",
+    "JDE #": "PCHEMIC99998",
+    "Location": "Chem Lab",
+    "Vendor": "NEOGEN",
+    "Part Number": "8515B",
+    "ROP": "1"
+  },
+  {
+    "Item": "Reveal Multi Tree Nut Allergen Kit",
+    "JDE #": "PCHEMIC03207",
+    "Location": "Chem Lab",
+    "Vendor": "NEOGEN",
+    "Part Number": "8555",
+    "ROP": "1"
+  },
+  {
+    "Item": "Swabbing Kit",
+    "JDE #": "PGLASSP00966",
+    "Location": "Chem Lab",
+    "Vendor": "NEOGEN",
+    "Part Number": "8432S",
+    "ROP": "1"
+  },
+  {
+    "Item": "RIDAScreen Peanut Kit",
+    "JDE #": "PMEDIAX04959",
+    "Location": "Chem Lab",
+    "Vendor": "r-Biopharm",
+    "Part Number": "R6811",
+    "ROP": "2"
+  },
+  {
+    "Item": "RIDAScreen FAST Sesame Kit",
+    "JDE #": "PMEDIAX04795",
+    "Location": "Chem Lab",
+    "Vendor": "r-Biopharm",
+    "Part Number": "R7202",
+    "ROP": "1"
+  },
+  {
+    "Item": "RIDAScreen FAST Milk Kit",
+    "JDE #": "PMEDIAX04482",
+    "Location": "Chem Lab",
+    "Vendor": "r-Biopharm",
+    "Part Number": "R4652",
+    "ROP": "2"
+  },
+  {
+    "Item": "RIDAScreen Gliadin",
+    "JDE #": "PCHEMIC00953",
+    "Location": "Chem Lab",
+    "Vendor": "r-Biopharm",
+    "Part Number": "R7001",
+    "ROP": "2"
+  },
+  {
+    "Item": "Cocktail (patented), 1L",
+    "JDE #": "PCHEMIC02870",
+    "Location": "Chem Lab",
+    "Vendor": "r-Biopharm",
+    "Part Number": "R7016",
+    "ROP": "1"
+  },
+  {
+    "Item": "Bovine Serum Albumin",
+    "JDE #": "PMEDIAX00946",
+    "Location": "Chem Lab",
+    "Vendor": "Sigma",
+    "Part Number": "A7888-10G",
+    "ROP": "1"
+  },
+  {
+    "Item": "Thimersol",
+    "JDE #": "PMEDIAX99999",
+    "Location": "Chem Lab",
+    "Vendor": "Sigma",
+    "Part Number": "T5125-10G",
+    "ROP": "1"
+  },
+  {
+    "Item": "Carboxymethyl Cellulose Sodium",
+    "JDE #": "PCHEMIC99998",
+    "Location": "Chem Lab",
+    "Vendor": "Sigma",
+    "Part Number": "C9481-500G",
+    "ROP": "1"
+  },
+  {
+    "Item": "ARGO Cornstarch, 3 pack",
+    "JDE #": "PSUPPLY99997",
+    "Location": "Chem Lab",
+    "Vendor": "Amazon",
+    "Part Number": "ARGO Corn Starch",
+    "ROP": "1"
+  },
+  {
+    "Item": "General Mills Rice Chex",
+    "JDE #": "PSUPPLY99997",
+    "Location": "Chem Lab",
+    "Vendor": "Amazon",
+    "Part Number": "Rice Chex",
+    "ROP": "1"
+  },
+  {
+    "Item": "8oz. Wide Mouth Plastic Jar",
+    "JDE #": "PSUPPLY02437",
+    "Location": "Chem Lab",
+    "Vendor": "Uline",
+    "Part Number": "S18070",
+    "ROP": "4"
+  },
+  {
+    "Item": "Well Holder",
+    "JDE #": "PSUPPLY99997",
+    "Location": "Chem Lab",
+    "Vendor": "NEOGEN",
+    "Part Number": "9402",
+    "ROP": "4"
+  },
+  {
+    "Item": "4700 Stat Fax Printer Paper",
+    "JDE #": "PSUPPLY99997",
+    "Location": "Chem Lab",
+    "Vendor": "NEOGEN",
+    "Part Number": "9319",
+    "ROP": "1"
+  },
+  {
+    "Item": "Microcentrifuge tubes 2.0mL",
+    "JDE #": "PGLASSP00262",
+    "Location": "Chem Lab",
+    "Vendor": "FISHER",
+    "Part Number": "05-408-138",
+    "ROP": "1"
+  },
+  {
+    "Item": "Amber Screw Cap Micro Tubes",
+    "JDE #": "PGLASSP99999",
+    "Location": "Chem Lab",
+    "Vendor": "FISHER",
+    "Part Number": "14-755-273",
+    "ROP": "1"
+  },
+  {
+    "Item": "Amber Screw Cap Micro Tubes Caps",
+    "JDE #": "PGLASSP99999",
+    "Location": "Chem Lab",
+    "Vendor": "FISHER",
+    "Part Number": "3471A",
+    "ROP": "1"
+  },
+  {
+    "Item": "30mL Wheaton Bottles",
+    "JDE #": "PGLASSP99999",
+    "Location": "Chem Lab",
+    "Vendor": "FISHER",
+    "Part Number": "03-083-3",
+    "ROP": "1"
+  },
+  {
+    "Item": "1N HCL",
+    "JDE #": "PCHEMIC99998",
+    "Location": "Chem Lab",
+    "Vendor": "FISHER",
+    "Part Number": "60-007-66",
+    "ROP": "1"
+  },
+  {
+    "Item": "Nonfat Dry Milk",
+    "JDE #": "PMEDIAX04505",
+    "Location": "Chem Lab",
+    "Vendor": "Culture Media Concepts",
+    "Part Number": "G577-325g",
+    "ROP": "1"
+  }
+]
 
-//     // Helper function to clean the "Formula" junk
-//     const clean = (val) => {
-//         if (!val) return "-";
-//         // Removes =" and the trailing "
-//         return val.replace(/^=\"/, '').replace(/\"$/, '');
-//     };
+const colRef = collection(db, "departments", "allergen", "inventory");
 
-//     console.log("Starting Clean Import...");
+    console.log("Starting Super-Search Import...");
     
-//     for (const row of excelData) {
-//         try {
-//             // We use Object.keys(row)[0] to find the "Item" column even if it's named messy
-//             // But manually mapping is safer:
-//             await addDoc(colRef, {
-//                 name: clean(row['="Item"']),
-//                 jde: clean(row['="JDE #"']),
-//                 location: clean(row['="Location"']),
-//                 vendor: clean(row['="Vendor"']),
-//                 partNum: clean(row['="Part Number "']),
-//                 rop: clean(row['="ROP"']),
-//                 prevOrder: "-", 
-//                 qty: 0          
-//             });
-//             console.log("Added Cleaned Item:", clean(row['="Item"']));
-//         } catch (e) {
-//             console.error("Error:", e);
-//         }
-//     }
-//     alert("Allergen Import Complete with Clean Data!");
-// };
+    for (const row of excelData) {
+        try {
+            // Mapping the clean JSON keys to variables
+            const name = row["Item"] || "-";
+            const jde = row["JDE #"] || "-";
+            
+            // This line is the magic that makes JDE + Name searchable together
+            const searchIndex = `${name} ${jde}`.toLowerCase().trim();
+
+            await addDoc(colRef, {
+                name: name,
+                jde: jde,
+                search_index: searchIndex, 
+                location: row["Location"] || "-",
+                vendor: row["Vendor"] || "-",
+                partNum: row["Part Number "] || "-", // Watch for that space!
+                rop: row["ROP"] || "0",
+                prevOrder: row["Prev Week Order"] || "-", 
+                qty: 0, // Fresh starts always at 0
+                lastUpdated: new Date()
+            });
+            console.log("Imported:", name);
+        } catch (e) {
+            console.error("Error on row:", row, e);
+        }
+    }
+    alert("Import Complete! Check your console if any rows failed.");
+};
 //     /* AUTO IMPORT SCRIPT*/
 </script>
 
